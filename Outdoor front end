@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OUTDOOR - Event Discovery App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { overscroll-behavior-y: none; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(20px); }
+        .map-pattern {
+            background-image: 
+                linear-gradient(rgba(139, 92, 246, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(139, 92, 246, 0.1) 1px, transparent 1px);
+            background-size: 50px 50px;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            100% { transform: scale(2); opacity: 0; }
+        }
+        .pulse-ring::before {
+            content: '';
+            position: absolute;
+            inset: -8px;
+            border-radius: 50%;
+            border: 2px solid #8B5CF6;
+            animation: pulse-ring 2s infinite;
+        }
+        .swipe-up { transform: translateY(0); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .swipe-down { transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .premium-glow { box-shadow: 0 0 20px rgba(251, 191, 36, 0.5); }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+        // --- MOCK DATA ---
+        const MOCK_EVENTS = [
+            {
+                id: 1,
+                title: "Jide's Friday Grill",
+                category: "house",
+                emoji: "🏠",
+                time: "Tonight, 8:00 PM",
+                distance: "2.3km away",
+                location: "No 5 Ogba",
+                description: "Weekly grill night with friends. Bring your appetite!",
+                host: { name: "Jide", avatar: "😎" },
+                attendees: 12,
+                views: 145,
+                isGoing: false,
+                image: "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=400",
+                coords: { x: 30, y: 40 },
+                visibility: "public"
+            },
+            {
+                id: 2,
+                title: "Owambe Special",
+                category: "wedding",
+                emoji: "💍",
+                time: "Saturday, 4:00 PM",
+                distance: "5.1km away",
+                location: "101 Event Center",
+                description: "Traditional wedding celebration. Come prepared to dance!",
+                host: { name: "Amina Events", avatar: "😊" },
+                attendees: 89,
+                views: 423,
+                isGoing: true,
+                image: "https://images.unsplash.com/photo-1519741497674-611481863552?w=400",
+                coords: { x: 65, y: 35 },
+                visibility: "public"
+            },
+            {
+                id: 3,
+                title: "UNILAG Campus Hangout",
+                category: "campus",
+                emoji: "🎓",
+                time: "Tomorrow, 3:00 PM",
+                distance: "1.8km away",
+                location: "UNILAG Campus",
+                description: "Meet and greet networking event for students.",
+                host: { name: "Campus Vibes", avatar: "😉" },
+                attendees: 34,
+                views: 267,
+                isGoing: false,
+                image: "https://images.unsplash.com/photo-1523580494863-6f3031224c94?w=400",
+                coords: { x: 45, y: 60 },
+                visibility: "public"
+            },
+            {
+                id: 4,
+                title: "Afrobeats Night",
+                category: "music",
+                emoji: "🎵",
+                time: "Friday, 10:00 PM",
+                distance: "3.2km away",
+                location: "The Shrine",
+                description: "Live afrobeats performance. Don't miss it!",
+                host: { name: "DJ Spinall", avatar: "🎧" },
+                attendees: 156,
+                views: 892,
+                isGoing: false,
+                image: "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400",
+                coords: { x: 20, y: 25 },
+                visibility: "public"
+            }
+        ];
+
+        const CATEGORIES = [
+            { id: 'all', emoji: '📍', label: 'All' },
+            { id: 'party', emoji: '🎵', label: 'Party' },
+            { id: 'house', emoji: '🏠', label: 'House' },
+            { id: 'wedding', emoji: '💍', label: 'Wedding' },
+            { id: 'campus', emoji: '🎓', label: 'Campus' },
+            { id: 'food', emoji: '🍔', label: 'Food' },
+            { id: 'sports', emoji: '🏀', label: 'Sports' }
+        ];
+
+        // --- COMPONENTS ---
+
+        const PremiumBadge = () => (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gradient-to-r from-amber-400 to-orange-500 text-white text-xs font-bold rounded-full">
+                <span>👑</span> PREMIUM
+            </span>
+        );
+
+        const TrialBanner = ({ daysLeft }) => (
+            <div className="bg-gradient-to-r from-violet-600 to-purple-600 text-white px-4 py-3 flex items-center justify-between animate-pulse">
+                <div className="flex items-center gap-2">
+                    <span className="text-lg">⏰</span>
+                    <span className="font-semibold text-sm">Trial ends in {daysLeft} days</span>
+                </div>
+                <button className="bg-white text-violet-600 px-3 py-1 rounded-full text-xs font-bold">
+                    Upgrade
+                </button>
+            </div>
+        );
+
+        const MapView = ({ events, selectedCategory, onEventSelect, userLocation }) => {
+            const filtered = selectedCategory === 'all' 
+                ? events 
+                : events.filter(e => e.category === selectedCategory);
+
+            return (
+                <div className="relative w-full h-full bg-violet-50 map-pattern overflow-hidden">
+                    {/* Simulated Map Markers */}
+                    {filtered.map(event => (
+                        <button
+                            key={event.id}
+                            onClick={() => onEventSelect(event)}
+                            className="absolute transform -translate-x-1/2 -translate-y-1/2 transition-all active:scale-90"
+                            style={{ left: `${event.coords.x}%`, top: `${event.coords.y}%` }}
+                        >
+                            <div className={`relative ${event.isGoing ? 'pulse-ring' : ''}`}>
+                                <div className="w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center text-2xl border-2 border-violet-500 hover:scale-110 transition-transform">
+                                    {event.emoji}
+                                </div>
+                                <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-2 h-2 bg-violet-500 rotate-45"></div>
+                            </div>
+                        </button>
+                    ))}
+                    
+                    {/* User Location */}
+                    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                        <div className="w-4 h-4 bg-violet-600 rounded-full border-2 border-white shadow-lg relative">
+                            <div className="absolute inset-0 bg-violet-600 rounded-full animate-ping opacity-75"></div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const EventCard = ({ event, onSelect, onToggleGoing, compact = false }) => {
+            if (compact) {
+                return (
+                    <div 
+                        onClick={() => onSelect(event)}
+                        className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100 flex items-center gap-3 active:scale-95 transition-transform"
+                    >
+                        <img src={event.image} alt="" className="w-16 h-16 rounded-xl object-cover" loading="lazy" />
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1 mb-0.5">
+                                <span>{event.emoji}</span>
+                                <h3 className="font-bold text-gray-900 truncate text-sm">{event.title}</h3>
+                            </div>
+                            <p className="text-xs text-gray-500">{event.time}</p>
+                            <p className="text-xs text-gray-400">{event.distance}</p>
+                        </div>
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); onToggleGoing(event.id); }}
+                            className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${event.isGoing ? 'bg-green-100 text-green-700' : 'bg-violet-100 text-violet-700'}`}
+                        >
+                            {event.isGoing ? 'Going ✓' : "I'm Going"}
+                        </button>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="bg-white rounded-3xl overflow-hidden shadow-lg border border-gray-100">
+                    <div className="relative h-48">
+                        <img src={event.image} alt="" className="w-full h-full object-cover" loading="lazy" />
+                        <div className="absolute top-3 right-3 bg-black/50 backdrop-blur-md text-white px-2 py-1 rounded-full text-xs flex items-center gap-1">
+                            <span>👁️</span> {event.views}
+                        </div>
+                        <div className="absolute top-3 left-3 bg-white/90 backdrop-blur px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+                            <span>{event.emoji}</span> {event.category}
+                        </div>
+                    </div>
+                    <div className="p-4">
+                        <h3 className="font-bold text-lg text-gray-900 mb-1">{event.title}</h3>
+                        <div className="flex items-center gap-4 text-sm text-gray-500 mb-3">
+                            <span className="flex items-center gap-1">📍 {event.location}</span>
+                            <span className="flex items-center gap-1">👥 {event.attendees}</span>
+                        </div>
+                        <p className="text-gray-600 text-sm mb-4 line-clamp-2">{event.description}</p>
+                        
+                        <div className="flex gap-2">
+                            <button 
+                                onClick={() => onToggleGoing(event.id)}
+                                className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${event.isGoing ? 'bg-green-500 text-white' : 'bg-violet-600 text-white'}`}
+                            >
+                                {event.isGoing ? '✓ Going' : "I'm Going"}
+                            </button>
+                            <button 
+                                onClick={() => onSelect(event)}
+                                className="flex-1 py-3 rounded-xl font-bold text-sm bg-gray-100 text-gray-700"
+                            >
+                                Details
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const EventDetails = ({ event, onClose, onToggleGoing, onShare, isPremium }) => {
+            if (!event) return null;
+
+            return (
+                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4">
+                    <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl max-h-[90vh] overflow-y-auto animate-slide-up">
+                        <div className="relative h-64 shrink-0">
+                            <img src={event.image} alt="" className="w-full h-full object-cover" />
+                            <button 
+                                onClick={onClose}
+                                className="absolute top-4 right-4 w-10 h-10 bg-white/90 rounded-full flex items-center justify-center text-2xl shadow-lg"
+                            >×</button>
+                            <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1">
+                                <span>{event.emoji}</span> {event.category}
+                            </div>
+                        </div>
+                        
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <h2 className="text-2xl font-bold text-gray-900 mb-2">{event.title}</h2>
+                                <div className="flex items-center gap-2 text-gray-500 text-sm">
+                                    <span className="flex items-center gap-1">👁️ {event.views} views</span>
+                                    <span>•</span>
+                                    <span className="flex items-center gap-1">👥 {event.attendees} going</span>
+                                </div>
+                            </div>
+
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-violet-100 flex items-center justify-center text-violet-600">📅</div>
+                                    <div>
+                                        <p className="font-semibold text-gray-900">{event.time}</p>
+                                        <p className="text-sm text-gray-500">Date & Time</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-violet-100 flex items-center justify-center text-violet-600">📍</div>
+                                    <div className="flex-1">
+                                        <p className="font-semibold text-gray-900">{event.location}</p>
+                                        <p className="text-sm text-gray-500">Tap for directions</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-violet-100 flex items-center justify-center text-violet-600">👤</div>
+                                    <div className="flex-1 flex items-center justify-between">
+                                        <div>
+                                            <p className="font-semibold text-gray-900">{event.host.name}</p>
+                                            <p className="text-sm text-gray-500">Host</p>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button className="px-3 py-1.5 bg-violet-100 text-violet-700 rounded-full text-xs font-bold">Contact</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-gray-50 rounded-2xl p-4">
+                                <p className="text-gray-700 text-sm leading-relaxed">{event.description}</p>
+                                <p className="text-xs text-gray-400 mt-2 text-right">{event.description.length}/200</p>
+                            </div>
+
+                            <div className="flex gap-3 pt-2">
+                                <button 
+                                    onClick={() => onToggleGoing(event.id)}
+                                    className={`flex-1 py-4 rounded-2xl font-bold transition-all ${event.isGoing ? 'bg-green-500 text-white' : 'bg-violet-600 text-white'}`}
+                                >
+                                    {event.isGoing ? '✓ Going' : "I'm Going"}
+                                </button>
+                                <button className="flex-1 py-4 rounded-2xl font-bold bg-gray-100 text-gray-700">
+                                    Directions
+                                </button>
+                                <button 
+                                    onClick={onShare}
+                                    className="px-4 py-4 rounded-2xl font-bold bg-gray-100 text-gray-700"
+                                >
+                                    ↗️
+                                </button>
+                            </div>
+
+                            {!isPremium && (
+                                <div className="mt-4 p-4 bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl border border-amber-200">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="font-bold text-amber-800">Host Analytics</span>
+                                        <PremiumBadge />
+                                    </div>
+                                    <div className="space-y-2 blur-sm opacity-50">
+                                        <div className="flex justify-between text-sm"><span>Conversion Rate</span><span>24%</span></div>
+                                        <div className="h-2 bg-amber-200 rounded-full overflow-hidden"><div className="w-1/4 h-full bg-amber-500"></div></div>
+                                    </div>
+                                    <button className="w-full mt-3 py-2 bg-amber-500 text-white rounded-xl text-sm font-bold">
+                                        Upgrade to View
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const CreateEvent = ({ onClose, isPremium }) => {
+            const [step, setStep] = useState(1);
+            const [form, setForm] = useState({
+                title: '',
+                category: 'house',
+                date: '',
+                time: '',
+                location: '',
+                description: '',
+                visibility: 'public',
+                radius: '5km'
+            });
+
+            const categories = [
+                { id: 'house', emoji: '🏠', label: 'House Party' },
+                { id: 'wedding', emoji: '💍', label: 'Wedding' },
+                { id: 'hotel', emoji: '🏨', label: 'Hotel' },
+                { id: 'nightlife', emoji: '🍾', label: 'Nightlife' },
+                { id: 'campus', emoji: '🎓', label: 'Campus' },
+                { id: 'food', emoji: '🍔', label: 'Food' },
+                { id: 'music', emoji: '🎵', label: 'Music' },
+                { id: 'sports', emoji: '🏀', label: 'Sports' }
+            ];
+
+            return (
+                <div className="fixed inset-0 z-50 bg-white flex flex-col">
+                    <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                        <button onClick={onClose} className="w-10 h-10 flex items-center justify-center text-2xl">×</button>
+                        <h2 className="font-bold text-lg">Host a Jolly</h2>
+                        <div className="w-10"></div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-6">
+                        <div className="flex gap-2 mb-6">
+                            {[1, 2, 3].map(i => (
+                                <div key={i} className={`h-1 flex-1 rounded-full ${i <= step ? 'bg-violet-600' : 'bg-gray-200'}`}></div>
+                            ))}
+                        </div>
+
+                        {step === 1 && (
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Event Title</label>
+                                    <input 
+                                        type="text" 
+                                        placeholder="e.g., Friday Night Vibes"
+                                        className="w-full p-4 bg-gray-50 rounded-2xl border-0 focus:ring-2 focus:ring-violet-500"
+                                        value={form.title}
+                                        onChange={e => setForm({...form, title: e.target.value})}
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-3">Select Category</label>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {categories.map(cat => (
+                                            <button
+                                                key={cat.id}
+                                                onClick={() => setForm({...form, category: cat.id})}
+                                                className={`p-4 rounded-2xl border-2 flex items-center gap-3 transition-all ${form.category === cat.id ? 'border-violet-600 bg-violet-50' : 'border-gray-100'}`}
+                                            >
+                                                <span className="text-2xl">{cat.emoji}</span>
+                                                <span className="font-medium text-sm">{cat.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {step === 2 && (
+                            <div className="space-y-6">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Date</label>
+                                        <input type="date" className="w-full p-4 bg-gray-50 rounded-2xl border-0" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Time</label>
+                                        <input type="time" className="w-full p-4 bg-gray-50 rounded-2xl border-0" />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Location</label>
+                                    <div className="relative">
+                                        <input 
+                                            type="text" 
+                                            placeholder="Search location..."
+                                            className="w-full p-4 pl-12 bg-gray-50 rounded-2xl border-0"
+                                        />
+                                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">📍</span>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Description</label>
+                                    <textarea 
+                                        placeholder="What's happening?"
+                                        maxLength={200}
+                                        rows={4}
+                                        className="w-full p-4 bg-gray-50 rounded-2xl border-0 resize-none"
+                                        value={form.description}
+                                        onChange={e => setForm({...form, description: e.target.value})}
+                                    />
+                                    <p className="text-right text-xs text-gray-400 mt-1">{form.description.length}/200</p>
+                                    {!isPremium && form.description.length > 100 && (
+                                        <div className="mt-2 p-3 bg-amber-50 rounded-xl flex items-center gap-2">
+                                            <PremiumBadge />
+                                            <span className="text-xs text-amber-800">Extended descriptions require Premium</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {step === 3 && (
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-3">Visibility</label>
+                                    <div className="space-y-3">
+                                        <label className={`flex items-center justify-between p-4 rounded-2xl border-2 cursor-pointer ${form.visibility === 'public' ? 'border-violet-600 bg-violet-50' : 'border-gray-100'}`}>
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-2xl">🌍</span>
+                                                <div>
+                                                    <p className="font-bold">Public</p>
+                                                    <p className="text-xs text-gray-500">Visible statewide</p>
+                                                </div>
+                                            </div>
+                                            <input 
+                                                type="radio" 
+                                                name="visibility" 
+                                                checked={form.visibility === 'public'}
+                                                onChange={() => setForm({...form, visibility: 'public'})}
+                                                className="w-5 h-5 text-violet-600"
+                                            />
+                                        </label>
+
+                                        <label className={`flex items-center justify-between p-4 rounded-2xl border-2 cursor-pointer ${form.visibility === 'exclusive' ? 'border-violet-600 bg-violet-50' : 'border-gray-100'}`}>
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-2xl">🔒</span>
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="font-bold">Exclusive</p>
+                                                        {!isPremium && <PremiumBadge />}
+                                                    </div>
+                                                    <p className="text-xs text-gray-500">Custom radius</p>
+                                                </div>
+                                            </div>
+                                            <input 
+                                                type="radio" 
+                                                name="visibility" 
+                                                checked={form.visibility === 'exclusive'}
+                                                onChange={() => isPremium && setForm({...form, visibility: 'exclusive'})}
+                                                disabled={!isPremium}
+                                                className="w-5 h-5 text-violet-600 disabled:opacity-50"
+                                            />
+                                        </label>
+
+                                        {form.visibility === 'exclusive' && isPremium && (
+                                            <div className="p-4 bg-violet-50 rounded-2xl space-y-2">
+                                                <p className="text-sm font-semibold text-violet-900">Select Radius</p>
+                                                <div className="flex gap-2">
+                                                    {['500m', '1km', '5km', '10km'].map(r => (
+                                                        <button
+                                                            key={r}
+                                                            onClick={() => setForm({...form, radius: r})}
+                                                            className={`flex-1 py-2 rounded-lg text-xs font-bold ${form.radius === r ? 'bg-violet-600 text-white' : 'bg-white text-violet-600'}`}
+                                                        >
+                                                            {r}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-3">Event Image</label>
+                                    <div className="aspect-video bg-gray-100 rounded-2xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-2 text-gray-400">
+                                        <span className="text-3xl">📷</span>
+                                        <span className="text-sm">Tap to upload image</span>
+                                    </div>
+                                    {!isPremium && (
+                                        <div className="mt-2 flex items-center gap-2 text-xs text-amber-600">
+                                            <PremiumBadge />
+                                            <span>Multiple images require Premium</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="p-4 border-t border-gray-100">
+                        <button 
+                            onClick={() => step < 3 ? setStep(step + 1) : onClose()}
+                            className="w-full py-4 bg-violet-600 text-white rounded-2xl font-bold text-lg"
+                        >
+                            {step === 3 ? 'Create Event' : 'Continue'}
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const Profile = ({ user, events, isPremium, onUpgrade }) => {
+            const attended = events.filter(e => e.isGoing).length;
+            const hosted = events.filter(e => e.host.name === user.name).length;
+
+            return (
+                <div className="min-h-screen bg-gray-50 pb-24">
+                    <div className="bg-white p-6 pt-12">
+                        <div className="flex items-center justify-between mb-6">
+                            <h1 className="text-2xl font-bold">Profile</h1>
+                            <button className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">⚙️</button>
+                        </div>
+
+                        <div className="flex flex-col items-center">
+                            <div className="w-24 h-24 rounded-full bg-violet-100 flex items-center justify-center text-4xl mb-4 border-4 border-violet-200">
+                                {user.avatar}
+                            </div>
+                            <h2 className="text-xl font-bold text-gray-900">{user.name}</h2>
+                            <p className="text-gray-500 flex items-center gap-1">
+                                <span>📍</span> {user.location}
+                            </p>
+                        </div>
+
+                        <div className="flex justify-center gap-8 mt-6">
+                            <div className="text-center">
+                                <p className="text-2xl font-bold text-violet-600">{attended}</p>
+                                <p className="text-xs text-gray-500 uppercase tracking-wide">Jollies</p>
+                            </div>
+                            <div className="w-px bg-gray-200"></div>
+                            <div className="text-center">
+                                <p className="text-2xl font-bold text-violet-600">{hosted}</p>
+                                <p className="text-xs text-gray-500 uppercase tracking-wide">Hosted</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {!isPremium && (
+                        <div className="p-4">
+                            <div className="bg-gradient-to-br from-violet-600 to-purple-700 rounded-3xl p-6 text-white relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-10 -mt-10 blur-2xl"></div>
+                                <div className="relative z-10">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <span className="text-2xl">👑</span>
+                                        <h3 className="font-bold text-lg">Go Premium</h3>
+                                    </div>
+                                    <p className="text-violet-100 text-sm mb-4">Unlock exclusive features and detailed analytics</p>
+                                    <div className="flex gap-2 mb-4">
+                                        <div className="flex-1 bg-white/10 rounded-xl p-3 text-center">
+                                            <p className="font-bold text-lg">₦2,500</p>
+                                            <p className="text-xs text-violet-200">/month</p>
+                                        </div>
+                                        <div className="flex-1 bg-white/20 rounded-xl p-3 text-center border border-white/30">
+                                            <p className="font-bold text-lg">₦20,000</p>
+                                            <p className="text-xs text-violet-200">/year</p>
+                                            <span className="text-xs bg-green-400 text-green-900 px-2 py-0.5 rounded-full font-bold">SAVE 33%</span>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={onUpgrade}
+                                        className="w-full py-3 bg-white text-violet-700 rounded-xl font-bold"
+                                    >
+                                        Upgrade Now
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="px-4 mt-4">
+                        <h3 className="font-bold text-gray-900 mb-3">Your Jollies</h3>
+                        <div className="flex gap-2 mb-4 overflow-x-auto hide-scrollbar">
+                            {['Upcoming', 'Past', 'Hosted'].map((tab, i) => (
+                                <button 
+                                    key={tab}
+                                    className={`px-6 py-2 rounded-full font-medium text-sm whitespace-nowrap ${i === 0 ? 'bg-violet-600 text-white' : 'bg-white text-gray-600'}`}
+                                >
+                                    {tab}
+                                </button>
+                            ))}
+                        </div>
+                        
+                        <div className="space-y-3">
+                            {events.filter(e => e.isGoing).map(event => (
+                                <EventCard 
+                                    key={event.id} 
+                                    event={event} 
+                                    compact 
+                                    onSelect={() => {}} 
+                                    onToggleGoing={() => {}} 
+                                />
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [currentView, setCurrentView] = useState('discover');
+            const [selectedEvent, setSelectedEvent] = useState(null);
+            const [showCreate, setShowCreate] = useState(false);
+            const [isPremium, setIsPremium] = useState(false);
+            const [trialDays, setTrialDays] = useState(7);
+            const [selectedCategory, setSelectedCategory] = useState('all');
+            const [events, setEvents] = useState(MOCK_EVENTS);
+            const [showNav, setShowNav] = useState(true);
+            const lastScrollY = useRef(0);
+
+            // Simulate scroll behavior for hiding nav
+            useEffect(() => {
+                const handleScroll = () => {
+                    const currentScrollY = window.scrollY;
+                    setShowNav(currentScrollY < lastScrollY.current || currentScrollY < 100);
+                    lastScrollY.current = currentScrollY;
+                };
+                window.addEventListener('scroll', handleScroll, { passive: true });
+                return () => window.removeEventListener('scroll', handleScroll);
+            }, []);
+
+            const handleToggleGoing = (eventId) => {
+                setEvents(prev => prev.map(e => {
+                    if (e.id === eventId) {
+                        const newGoing = !e.isGoing;
+                        return {
+                            ...e,
+                            isGoing: newGoing,
+                            attendees: newGoing ? e.attendees + 1 : e.attendees - 1
+                        };
+                    }
+                    return e;
+                }));
+            };
+
+            const handleShare = () => {
+                if (navigator.share) {
+                    navigator.share({
+                        title: selectedEvent?.title,
+                        text: `Check out ${selectedEvent?.title} on OUTDOOR!`,
+                        url: window.location.href
+                    });
+                } else {
+                    alert('Event link copied to clipboard!');
+                }
+            };
+
+            const user = {
+                name: "Any",
+                avatar: "😎",
+                location: "Kano"
+            };
+
+            return (
+                <div className="max-w-md mx-auto bg-white min-h-screen relative overflow-hidden shadow-2xl">
+                    {/* Trial Banner */}
+                    {!isPremium && <TrialBanner daysLeft={trialDays} />}
+
+                    {/* Main Content */}
+                    <div className={`${currentView === 'discover' ? 'h-screen' : ''} ${!showNav && currentView === 'discover' ? 'pb-0' : 'pb-20'}`}>
+                        {currentView === 'discover' && (
+                            <div className="h-full flex flex-col">
+                                {/* Search & Filters */}
+                                <div className="absolute top-0 left-0 right-0 z-20 p-4 pt-12 bg-gradient-to-b from-white/90 to-transparent">
+                                    <div className="relative mb-3">
+                                        <input 
+                                            type="text" 
+                                            placeholder="Search events, locations..."
+                                            className="w-full p-4 pl-12 bg-white rounded-2xl shadow-lg border-0 text-sm"
+                                        />
+                                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-lg">🔍</span>
+                                    </div>
+                                    
+                                    <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-2">
+                                        {CATEGORIES.map(cat => (
+                                            <button
+                                                key={cat.id}
+                                                onClick={() => setSelectedCategory(cat.id)}
+                                                className={`flex items-center gap-1 px-4 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all ${selectedCategory === cat.id ? 'bg-violet-600 text-white' : 'bg-white text-gray-700 shadow-sm'}`}
+                                            >
+                                                <span>{cat.emoji}</span>
+                                                <span>{cat.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Map */}
+                                <div className="flex-1 relative">
+                                    <MapView 
+                                        events={events} 
+                                        selectedCategory={selectedCategory}
+                                        onEventSelect={setSelectedEvent}
+                                    />
+                                    
+                                    {/* Nearby List - Swipe Up */}
+                                    <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl max-h-64 overflow-y-auto">
+                                        <div className="sticky top-0 bg-white pt-3 pb-2 px-4 border-b border-gray-100 z-10">
+                                            <div className="w-12 h-1 bg-gray-300 rounded-full mx-auto mb-3"></div>
+                                            <h3 className="font-bold text-gray-900">Nearby Jollies</h3>
+                                        </div>
+                                        <div className="p-4 space-y-3">
+                                            {events.map(event => (
+                                                <EventCard 
+                                                    key={event.id} 
+                                                    event={event} 
+                                                    compact 
+                                                    onSelect={setSelectedEvent}
+                                                    onToggleGoing={handleToggleGoing}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {currentView === 'profile' && (
+                            <Profile 
+                                user={user} 
+                                events={events} 
+                                isPremium={isPremium}
+                                onUpgrade={() => setIsPremium(true)}
+                            />
+                        )}
+                    </div>
+
+                    {/* Floating Action Button (Create) */}
+                    <button 
+                        onClick={() => setShowCreate(true)}
+                        className="absolute bottom-24 left-1/2 transform -translate-x-1/2 w-14 h-14 bg-violet-600 rounded-full shadow-lg shadow-violet-600/40 flex items-center justify-center text-white text-2xl z-30 hover:scale-110 transition-transform"
+                    >
+                        +
+                    </button>
+
+                    {/* Bottom Navigation */}
+                    <div className={`absolute bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-6 py-4 flex justify-between items-center z-30 transition-transform duration-300 ${showNav ? 'translate-y-0' : 'translate-y-full'}`}>
+                        <button 
+                            onClick={() => setCurrentView('discover')}
+                            className={`flex flex-col items-center gap-1 ${currentView === 'discover' ? 'text-violet-600' : 'text-gray-400'}`}
+                        >
+                            <span className="text-xl">🗺️</span>
+                            <span className="text-xs font-medium">Discover</span>
+                        </button>
+                        
+                        <div className="w-14"></div> {/* Spacer for FAB */}
+                        
+                        <button 
+                            onClick={() => setCurrentView('profile')}
+                            className={`flex flex-col items-center gap-1 ${currentView === 'profile' ? 'text-violet-600' : 'text-gray-400'}`}
+                        >
+                            <span className="text-xl">👤</span>
+                            <span className="text-xs font-medium">Profile</span>
+                        </button>
+                    </div>
+
+                    {/* Modals */}
+                    {selectedEvent && (
+                        <EventDetails 
+                            event={selectedEvent} 
+                            onClose={() => setSelectedEvent(null)}
+                            onToggleGoing={handleToggleGoing}
+                            onShare={handleShare}
+                            isPremium={isPremium}
+                        />
+                    )}
+
+                    {showCreate && (
+                        <CreateEvent 
+                            onClose={() => setShowCreate(false)}
+                            isPremium={isPremium}
+                        />
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
